@@ -165,16 +165,18 @@ try {
     $summaryParts  = [System.Collections.Generic.List[string]]::new()
 
     # Helper: read a named field from a Datto status XML element.
-    # Datto may encode values as XML attributes or as child element text --
-    # try both so we handle either format without special-casing.
+    # Datto stores monitoring values as <value name="field-name">content</value>.
+    # Root-level metadata (now, platform, version) are XML attributes on <status-report>.
     function Get-DattoXmlField {
         param(
             [System.Xml.XmlElement]$Node,
             [string]$Field
         )
+        # Root-level XML attributes (e.g. "now", "platform", "version")
         $attr = $Node.GetAttribute($Field)
         if (![string]::IsNullOrEmpty($attr)) { return $attr }
-        $child = $Node.SelectSingleNode($Field)
+        # Monitoring values: <value name="field-name">content</value>
+        $child = $Node.SelectSingleNode("value[@name='$Field']")
         if ($child) { return $child.InnerText }
         return $null
     }
