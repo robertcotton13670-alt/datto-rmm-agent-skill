@@ -168,6 +168,71 @@ When reviewing an existing component or monitor:
 - [ ] No interactive prompts or UI elements
 - [ ] Runs correctly as SYSTEM (not assuming user context)
 
+## Packaging (.cpt files)
+
+Datto RMM components are imported as `.cpt` files. A `.cpt` is a ZIP archive containing:
+
+| File | Required | Description |
+|------|----------|-------------|
+| `command.bat` | Yes | The PowerShell script (raw .ps1 content, NOT a batch wrapper) |
+| `resource.xml` | Yes | Component metadata (name, category, variables, timeout) |
+| `icon.png` | No | 48x48 PNG icon |
+| Other files | No | Attachments (executables, drivers, configs, etc.) |
+
+**CRITICAL: All text files (command.bat, resource.xml) MUST be UTF-8 WITHOUT BOM.** PowerShell's `Set-Content -Encoding UTF8` and `Out-File -Encoding UTF8` add a BOM in PS 5.1. Use `[System.IO.File]::WriteAllText($path, $content, [System.Text.UTF8Encoding]::new($false))` instead. A BOM in resource.xml causes Datto to fail silently on import.
+
+### resource.xml template
+
+```xml
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<component info="CentraStage Component">
+    <general>
+        <name>Component Name</name>
+        <category>scripts</category>
+        <description>What it does.</description>
+        <uid>GENERATE-A-NEW-GUID</uid>
+        <hash/>
+        <version>1</version>
+        <timeout>600</timeout>
+        <securityLevel>2</securityLevel>
+        <installType>powershell</installType>
+    </general>
+    <variable idx="0">
+        <name>VariableName</name>
+        <type>string</type>
+        <direction>false</direction>
+        <description>Description</description>
+        <defaultVal>default</defaultVal>
+    </variable>
+</component>
+```
+
+- `category`: `scripts` or `applications`
+- `timeout`: seconds (600 = 10min for scripts, 1800 = 30min for applications)
+- `securityLevel`: `2` = run as SYSTEM
+- `installType`: `powershell`
+- `direction`: `false` = input variable
+- Variables use `idx` starting from 0
+
+### Building the .cpt
+
+```powershell
+$utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+$outDir = "$env:TEMP\cpt_build"
+
+# Write command.bat (NO BOM)
+[System.IO.File]::WriteAllText("$outDir\command.bat", $scriptContent, $utf8NoBom)
+
+# Write resource.xml (NO BOM)
+[System.IO.File]::WriteAllText("$outDir\resource.xml", $xmlContent, $utf8NoBom)
+
+# Copy attachments + icon.png into $outDir
+
+# Create .cpt
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+[System.IO.Compression.ZipFile]::CreateFromDirectory($outDir, "Component.cpt")
+```
+
 ## Reference Files
 
 Load these on demand -- do not read all at once:
