@@ -33,6 +33,21 @@ $nonAscii = $bytes | Where-Object { $_ -gt 127 }
 if ($nonAscii) { Write-Warning "Non-ASCII bytes found at positions: ..." }
 ```
 
+**French accented characters:** Use `[char]0xXXXX` escapes inline. Define shorthand variables at the top of the script:
+```powershell
+$cE  = [char]0x00E9  # e accent aigu : e
+$cEe = [char]0x00E8  # e accent grave : e (grave)
+$cEa = [char]0x00EA  # e accent circ  : e (circumflex)
+$cA  = [char]0x00E0  # a accent grave : a
+$cO  = [char]0x00F4  # o accent circ  : o (circumflex)
+
+# Usage in strings:
+$msg = "Intervention termin$($cE)e"        # "Intervention terminée"
+$msg = "bient$($cO)t cl$($cO)tur$($cE)"   # "bientôt clôturé"
+```
+
+**Note:** Comments in .ps1 files must also be ASCII-only. Write "predefinis" not "prédéfinis", "Detection" not "Détection", etc. The generated files (toast.ps1, config files written at runtime) can use UTF-8 since they are created by the script, not packaged as source.
+
 ## ForEach-Object += Scoping
 
 `ForEach-Object` runs in a child scope in the pipeline. The `+=` operator creates a NEW
@@ -123,8 +138,42 @@ Datto components run as **NT AUTHORITY\SYSTEM** by default.
 
 ### Solutions
 - **HKCU access:** Use `Invoke-UserRegistryAction` (toolkit) to mount user hives
-- **User-visible processes:** Use `Invoke-AsLoggedOnUser` (toolkit) via scheduled task
+- **User-visible processes:** Use CPAs.dll (`CreateProcessAsUser`) for UI/toast — or `Invoke-AsLoggedOnUser` (toolkit, scheduled task) for non-UI work
 - **User profile paths:** Use `Get-LoggedOnUser` to find the profile path, then access directly
+
+### CPAs.dll vs Invoke-AsLoggedOnUser
+
+Both run code in the user's session, but they behave differently:
+
+| | CPAs.dll | Invoke-AsLoggedOnUser |
+|---|---|---|
+| Mechanism | `CreateProcessAsUser` — direct injection into user session | Scheduled task running as user |
+| UI/desktop access | Yes — process sees the interactive desktop | Limited — Task Scheduler session isolation |
+| Toast notifications | Reliable | Works but less direct |
+| Requires file | `CPAs.dll` embedded in component | Toolkit function only |
+| Failure mode | Explicit error | Task may silently not run |
+
+**Use CPAs.dll** when the component needs to display UI to the user (toast notifications, dialogs, visible windows). It is the method used by official Datto-authored components for this purpose.
+
+**Use `Invoke-AsLoggedOnUser`** for HKCU registry writes, user-context config changes, or any non-UI work where the scheduled task approach is sufficient.
+
+```powershell
+# CPAs.dll pattern — direct session injection
+try {
+    [Reflection.Assembly]::LoadFile("$PWD\CPAs.dll") | Out-Null
+    [murrayju.ProcessExtensions.ProcessExtensions]::StartProcessAsCurrentUser(
+        "wscript.exe",
+        "`"$varToastVBS`"",
+        $PWD.Path,
+        $false
+    )
+} catch {
+    # fallback or exit 1
+}
+```
+
+SHA1: `8031C2F6CF762EB11DF00ED68E9BA8A5EDDDAD12`  
+SHA256: `F0BFA2B80BA20A1087BB3977DF744D2F5050D6078EC080AA3CCD438CCB68B7B8`
 
 ### Common Trap: $env:USERPROFILE
 Under SYSTEM, `$env:USERPROFILE` is `C:\Windows\system32\config\systemprofile`.

@@ -204,15 +204,43 @@ Datto RMM components are imported as `.cpt` files. A `.cpt` is a ZIP archive con
         <description>Description</description>
         <defaultVal>default</defaultVal>
     </variable>
+    <variable idx="1">
+        <name>UsrFlag</name>
+        <type>boolean</type>
+        <direction>false</direction>
+        <description>Enable feature X</description>
+        <defaultVal>false</defaultVal>
+    </variable>
 </component>
+```
+
+**Dropdown (map type):** Use `<type>map</type>` with `<selectionKeyValue>` entries. Datto injects the `<value>` into `$env:VariableName`. The `<defaultVal>` must match the `<name>` (display label) of the desired default option:
+
+```xml
+<variable idx="2">
+    <name>usrMode</name>
+    <selectionKeyValue idx="0">
+        <name>Option A label</name>
+        <value>option_a</value>
+    </selectionKeyValue>
+    <selectionKeyValue idx="1">
+        <name>Option B label</name>
+        <value>option_b</value>
+    </selectionKeyValue>
+    <type>map</type>
+    <direction>false</direction>
+    <description>Choose the mode</description>
+    <defaultVal>Option A label</defaultVal>
+</variable>
 ```
 
 - `category`: `scripts` or `applications`
 - `timeout`: seconds (600 = 10min for scripts, 1800 = 30min for applications)
-- `securityLevel`: `2` = run as SYSTEM
+- `securityLevel`: `2` = run as Administrator, `5` = run as SYSTEM (observed on official Datto components)
 - `installType`: `powershell`
 - `direction`: `false` = input variable
 - Variables use `idx` starting from 0
+- **resource.xml descriptions can use UTF-8 non-ASCII** (it's a proper XML file written UTF-8 no-BOM — only the .ps1 source must be ASCII-only)
 
 ### Building the .cpt
 

@@ -251,7 +251,53 @@ Write-LogSection "Phase 2: Configuration"
 
 Components run as SYSTEM by default. For user-context operations (HKCU registry, user apps):
 
-### Scheduled Task Method (Recommended)
+### CPAs.dll Method (Recommended for UI / toast notifications)
+
+`CPAs.dll` (murrayju.ProcessExtensions) uses `CreateProcessAsUser` to directly inject a process into the user's interactive session. This is the method used by official Datto-authored components for toast notifications and any UI that must be visible to the user.
+
+```powershell
+# Detect logged-on user first
+$explorerProcs = Get-CimInstance Win32_Process -Filter "Name='explorer.exe'" -ErrorAction SilentlyContinue
+foreach ($proc in $explorerProcs) {
+    $owner = Invoke-CimMethod -InputObject $proc -MethodName GetOwner
+    if ($owner.ReturnValue -eq 0 -and $owner.User) {
+        $varUsername = $owner.User
+        break
+    }
+}
+
+# Launch in user session via CPAs.dll (with timeout to prevent freeze)
+$cpasJob = $null
+try {
+    $cpasJob = Start-Job -ScriptBlock {
+        param($dll, $vbs, $workDir)
+        [Reflection.Assembly]::LoadFile($dll) | Out-Null
+        return [murrayju.ProcessExtensions.ProcessExtensions]::StartProcessAsCurrentUser(
+            "wscript.exe", "`"$vbs`"", $workDir, $false
+        )
+    } -ArgumentList "$PWD\CPAs.dll", $varVBS, $PWD.Path
+
+    $completed = Wait-Job -Job $cpasJob -Timeout 10
+    if (-not $completed) { Stop-Job -Job $cpasJob }
+    $result = if ($completed) { Receive-Job -Job $cpasJob } else { $false }
+} catch {
+    $result = $false
+} finally {
+    if ($cpasJob) { Remove-Job -Job $cpasJob -Force -ErrorAction SilentlyContinue }
+}
+```
+
+**VBS silent launcher pattern** — use a VBS wrapper to run PowerShell with no visible window (CPAs.dll cannot pass `-WindowStyle Hidden` reliably through cmd.exe):
+```vbs
+Set objShell = CreateObject("WScript.Shell")
+objShell.Run "powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -NoProfile -File ""C:\path\to\script.ps1""", 0, False
+```
+
+CPAs.dll hash verification:  
+SHA1: `8031C2F6CF762EB11DF00ED68E9BA8A5EDDDAD12`  
+SHA256: `F0BFA2B80BA20A1087BB3977DF744D2F5050D6078EC080AA3CCD438CCB68B7B8`
+
+### Scheduled Task Method (Non-UI work)
 
 ```powershell
 $result = Invoke-AsLoggedOnUser -ScriptBlock {
